@@ -23,6 +23,8 @@ type Server struct {
 	downloadsDir    string
 	downloader      downloader.Downloader
 	playlistSyncURL string
+	sizeLimit       int
+	downloadFinish  chan (struct{})
 }
 
 const videosIndexPath = "/videos"
@@ -33,6 +35,8 @@ func New(cfg config.Config) Server {
 		downloadsDir:    cfg.DownloadsDir,
 		playlistSyncURL: cfg.PlaylistSyncURL,
 		downloader:      downloader.New(cfg.DownloadsDir, cfg.Format),
+		sizeLimit:       cfg.SizeLimit,
+		downloadFinish:  make(chan struct{}),
 	}
 
 	t := &tmpl{
