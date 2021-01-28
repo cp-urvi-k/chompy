@@ -95,6 +95,7 @@ func (s *Server) index(c echo.Context) error {
 type videoFile struct {
 	Filename string
 	Created  time.Time
+	Size     int64
 }
 
 func (s *Server) videosList(c echo.Context) error {
@@ -110,8 +111,11 @@ func (s *Server) videosList(c echo.Context) error {
 		}
 		vids = append(vids, videoFile{Filename: file.Name(), Created: file.ModTime()})
 	}
-
 	sort.Slice(vids, func(i, j int) bool { return vids[i].Created.After(vids[j].Created) })
+
+	// TODO remove
+	s.downloadFinish <- struct{}{}
+
 	return c.Render(http.StatusOK, "videos_list.html", vids)
 }
 
