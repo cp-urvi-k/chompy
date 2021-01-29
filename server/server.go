@@ -105,9 +105,6 @@ func (s *Server) videosList(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
-	// TODO remove
-	s.triggerCleanup()
-
 	return c.Render(http.StatusOK, "videos_list.html", vids)
 }
 
