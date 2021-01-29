@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/caarlos0/env/v6"
@@ -15,6 +16,7 @@ func main() {
 		log.Fatalln("Failed to parse config", err)
 	}
 
+	fmt.Println("test1")
 	server := server.New(cfg, afero.NewOsFs())
 	server.Serve(cfg.Port)
 }
