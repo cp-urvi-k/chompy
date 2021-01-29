@@ -23,6 +23,10 @@ func (s Server) taskPlaylistSync() {
 // Videos are deleted in strict reverse chronological order (i.e. taskLimitSize
 // will not attempt to delete larger videos before smaller ones).
 func (s Server) taskLimitSize() {
+	if s.sizeLimit != 0 {
+		log.Printf("Max downloads size set to %d MiB\n", s.sizeLimit)
+	}
+
 	for {
 		if _, ok := <-s.cleanup; ok {
 			log.Println("taskLimitSize task triggered")
