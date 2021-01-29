@@ -1,10 +1,7 @@
 package server
 
 import (
-	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 
 	"github.com/pkg/errors"
 	"github.com/robfig/cron/v3"
@@ -26,104 +23,65 @@ func (s Server) taskPlaylistSync() {
 // Videos are deleted in strict reverse chronological order (i.e. taskLimitSize
 // will not attempt to delete larger videos before smaller ones).
 func (s Server) taskLimitSize() {
-	log.Println("taskLimitSize task triggered")
-
 	for {
-		fmt.Println("listening")
-		j, more := <-s.downloadFinish
-		if more {
-			fmt.Println("received job", j)
+		if _, ok := <-s.cleanup; ok {
+			log.Println("taskLimitSize task triggered")
 
 			if s.sizeLimit == 0 {
 				continue
 			}
 
-			// TODO: we dont want recursive actually --
-			// can we use the same logic as GetVideosList
-			// and compute sizes from just the videos themselves
-			size, err := DirSize(s.downloadsDir)
-			if err != nil {
-				log.Println("Failed to get directory size:", err)
-				continue
-			}
-
-			sizeDiff := size - int64(s.sizeLimit)
-			if sizeDiff <= 0 {
-				continue
-			}
-
-			log.Println("deleteing stuff")
-			// TODO:
-			// - share getVideoFiles across workers and videos list
-			// - send to channel on download done
-			// - tests
-			// - get rid of DirSize
-
-			videos, err := getVideoFiles(s.downloadsDir, createdAsc)
+			vids, err := getVideoFiles(s.downloadsDir, createdAsc)
 			if err != nil {
 				log.Println("Failed to get video files:", err)
 				continue
 			}
 
-			var toReclaim int64
-			toDelete := make([]videoFile, 0, 2)
-			for _, v := range videos {
-				if toReclaim >= sizeDiff {
+			over, diff := needsDeletion(vids, int64(s.sizeLimit))
+			if !over {
+				continue
+			}
+
+			var reclaimed int64
+			vidsToDelete := make([]videoFile, 0, 2)
+			for _, v := range vids {
+				if reclaimed >= diff {
 					break
 				}
 
-				toReclaim += v.Size
-				toDelete = append(toDelete, v)
+				reclaimed += v.Size
+				vidsToDelete = append(vidsToDelete, v)
 			}
 
-			log.Printf("Deleting %d files to free %d MiB", len(toDelete), toReclaim)
-			log.Printf("%v", toDelete)
+			log.Printf("Over size limit by %d MiB. "+
+				"Deleting %d videos to free %d MiB", diff, len(vidsToDelete), reclaimed)
 
-			// print deleting 10 files to free y MiB
-			// for each in todelete: delete
-			err = deleteVideoFiles(toDelete)
-			if err != nil {
+			if err = deleteVideoFiles(s.fs, vidsToDelete, s.downloadsDir); err != nil {
 				log.Println("Failed to delete videos:", err)
 			}
-
-		} else {
-			fmt.Println("received all jobs")
-			return
 		}
 	}
 }
 
-// DirSize returns a directory's size in MiB
-func DirSize(path string) (int64, error) {
-	var size int64
-	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			size += info.Size()
-		}
-		return err
-	})
-	return size / toMiB, err
+func (s Server) triggerCleanup() {
+	s.cleanup <- struct{}{}
 }
 
 func (s Server) startWorkers() error {
-
 	// Startup tasks
 	if s.playlistSyncURL != "" {
 		log.Printf("Tracking playlist: %s\n", s.playlistSyncURL)
 		s.taskPlaylistSync()
 	}
 
-	size, err := DirSize(s.downloadsDir)
+	videos, err := getVideoFiles(s.downloadsDir, createdAsc)
 	if err != nil {
-		return errors.Wrap(err, "failed to get directory size")
+		log.Fatalln("Failed to get video files:", err)
 	}
-	log.Println("got size: ", size)
-	if s.sizeLimit != 0 && size > int64(s.sizeLimit) {
-		log.Printf("/!\\ Size limit is lower than current directory size (%dMiB > %dMiB). "+
-			"Please remove extra files manually", size, s.sizeLimit)
+
+	if over, diff := needsDeletion(videos, int64(s.sizeLimit)); over {
+		log.Printf("/!\\ Size limit is lower than current directory size (by %d MiB). "+
+			"Please remove extra files manually", diff)
 
 		// TODO: uncomment - testing
 		// s.sizeLimit = 0
