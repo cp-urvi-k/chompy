@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/pkg/errors"
@@ -26,6 +25,19 @@ func (s Server) taskPlaylistSync() {
 func (s Server) taskLimitSize() {
 	if s.sizeLimit != 0 {
 		log.Printf("Max downloads size set to %d MiB\n", s.sizeLimit)
+	}
+
+	videos, err := getVideoFiles(s.downloadsDir, createdAsc)
+	if err != nil {
+		log.Fatalln("Failed to get video files:", err)
+	}
+
+	if over, diff := needsDeletion(videos, int64(s.sizeLimit)); over {
+		log.Printf("/!\\ Size limit is lower than current directory size (by %d MiB). "+
+			"Please remove extra files manually", diff)
+
+		// TODO: uncomment - testing
+		// s.sizeLimit = 0
 	}
 
 	for {
@@ -73,43 +85,25 @@ func (s Server) triggerCleanup() {
 }
 
 func (s Server) startWorkers() error {
-	// Startup tasks
-	if s.playlistSyncURL != "" {
-		log.Printf("Tracking playlist: %s\n", s.playlistSyncURL)
-		s.taskPlaylistSync()
-	}
-
-	fmt.Println("test2")
-
-	videos, err := getVideoFiles(s.downloadsDir, createdAsc)
-	if err != nil {
-		log.Fatalln("Failed to get video files:", err)
-	}
-	fmt.Println("test3")
-
-	if over, diff := needsDeletion(videos, int64(s.sizeLimit)); over {
-		log.Printf("/!\\ Size limit is lower than current directory size (by %d MiB). "+
-			"Please remove extra files manually", diff)
-
-		// TODO: uncomment - testing
-		// s.sizeLimit = 0
-	}
-	go s.taskLimitSize()
-
-	fmt.Println("test4")
-
 	// Scheduled tasks
-	scheduler := cron.New(
-		cron.WithChain(
-			cron.SkipIfStillRunning(cron.DiscardLogger),
-		))
+	// ---------------
+	scheduler := cron.New()
 
-	_, err = scheduler.AddFunc("@every 31m", s.taskPlaylistSync)
-	if err != nil {
+	jobPlaylistSync := cron.NewChain(
+		cron.SkipIfStillRunning(cron.DiscardLogger),
+	).Then(cron.FuncJob(s.taskPlaylistSync))
+
+	if _, err := scheduler.AddJob("@every 31m", jobPlaylistSync); err != nil {
 		return errors.Wrap(err, "failed to schedule task")
 	}
 
-	fmt.Println("test5")
+	// Startup tasks
+	// --------------
+	if s.playlistSyncURL != "" {
+		log.Printf("Tracking playlist: %s\n", s.playlistSyncURL)
+	}
+	go jobPlaylistSync.Run()
+	go s.taskLimitSize()
 
 	scheduler.Start()
 	return nil
