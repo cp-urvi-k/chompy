@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/pkg/errors"
@@ -78,10 +79,13 @@ func (s Server) startWorkers() error {
 		s.taskPlaylistSync()
 	}
 
+	fmt.Println("test2")
+
 	videos, err := getVideoFiles(s.downloadsDir, createdAsc)
 	if err != nil {
 		log.Fatalln("Failed to get video files:", err)
 	}
+	fmt.Println("test3")
 
 	if over, diff := needsDeletion(videos, int64(s.sizeLimit)); over {
 		log.Printf("/!\\ Size limit is lower than current directory size (by %d MiB). "+
@@ -91,6 +95,8 @@ func (s Server) startWorkers() error {
 		// s.sizeLimit = 0
 	}
 	go s.taskLimitSize()
+
+	fmt.Println("test4")
 
 	// Scheduled tasks
 	scheduler := cron.New(
@@ -102,6 +108,8 @@ func (s Server) startWorkers() error {
 	if err != nil {
 		return errors.Wrap(err, "failed to schedule task")
 	}
+
+	fmt.Println("test5")
 
 	scheduler.Start()
 	return nil
